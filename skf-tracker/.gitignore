@@ -1,0 +1,8 @@
+# Ignore env and config files
+.env
+
+# Node modules
+node_modules/
+
+# Output files
+dist/
