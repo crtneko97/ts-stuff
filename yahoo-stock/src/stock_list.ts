@@ -1,3 +1,4 @@
+
 import { StockInfo } from "./types/stockTypes";
 
 export const stocks: StockInfo[] = [
@@ -11,6 +12,6 @@ export const stocks: StockInfo[] = [
   { company: "SKF", symbol: "SKF-B.ST" },
   { company: "NASDAQ| Bitcoin Depot A", symbol: "BTC-USD" },
   { company: "Nvidia", symbol: "NVDA" },
-  { company: "ASUS", symbol: "2357.TW" },
-  { company: "Hexagon AB", symbol: "HEXA.ST" }
+  { company: "ASUS", symbol: "2357.TW" }
 ];
+

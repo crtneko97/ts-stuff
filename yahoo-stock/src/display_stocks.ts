@@ -1,24 +1,29 @@
-// src/displayStocks.ts
 
 import yahooFinance from "yahoo-finance2"; // For fetching Yahoo Finance data
 import chalk from "chalk";                 // For colorized console output
 import * as fs from "fs";
 import * as path from "path";
-import { StockQuote, StockInfo, StockRecord, DailyLogEntry } from "./types/stockTypes";
+import { StockQuote, StockInfo, StockRecord, DailyLogEntry, StockRow } from "./types/stockTypes";
 import { stocks } from "./stock_list";
-// Set the file path for the optional display log in the "jsonlol" folder.
-const dailyLogPath = path.join(__dirname, "..", "jsonlol", "displayLog.json");
+import { stockDescriptions } from "./stockDescriptions";
 
-// In‑memory display log (if you wish to log updates).
-let displayLog: DailyLogEntry[] = [];
+// File path for the log in the src folder.
+const dailyLogPath = path.join(__dirname, "daily_log.json");
 
-// Object to store the start price for each stock (set once when the run starts).
+// In‑memory daily log.
+let dailyLog: DailyLogEntry[] = [];
+
+// Object to store the start price for each stock.
 const startPrices: { [symbol: string]: number } = {};
+
+// Threshold for printing updates (in percent).
+const THRESHOLD = 0.05;
+
+// Flag indicating the first update.
+let isFirstUpdate = true;
 
 /**
  * Fetches the latest stock quote for a given symbol.
- * @param symbol - The Yahoo Finance stock symbol.
- * @returns A Promise that resolves to a StockQuote, or null if an error occurs.
  */
 async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
   try {
@@ -31,8 +36,7 @@ async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
 }
 
 /**
- * Helper function to return the start price as a plain padded string (12 characters).
- * @param symbol - The stock symbol.
+ * Returns the start price as a padded string (12 characters).
  */
 function initialPriceString(symbol: string): string {
   const sp = startPrices[symbol];
@@ -40,56 +44,59 @@ function initialPriceString(symbol: string): string {
 }
 
 /**
- * Writes the display log to a JSON file (if needed).
+ * Writes the in-memory daily log to a JSON file in the src folder.
  */
-function updateDisplayLogFile() {
-  fs.writeFile(dailyLogPath, JSON.stringify(displayLog, null, 2), err => {
-    if (err) console.error(chalk.red("Error writing display log file:"), err);
+function updateDailyLogFile() {
+  fs.writeFile(dailyLogPath, JSON.stringify(dailyLog, null, 2), err => {
+    if (err) console.error(chalk.red("Error writing daily log file:"), err);
   });
 }
 
 /**
- * Fetches all stock quotes and displays all data (regardless of change).
- * The table includes: Company, Symbol, Start Price, Current Price, % Change.
- * Padding is applied to uncolored strings, then colors are applied.
+ * Fetches all stock quotes, calculates the % change relative to the start price,
+ * logs the update, and prints a two-line output for each stock.
  */
-async function fetchAndDisplayStockData() {
+async function fetchAndPrintStockData() {
   const now = new Date();
   const timestampStr = now.toISOString();
 
-  // Array to hold stock records for logging.
   const recordEntries: StockRecord[] = [];
-  // Array to hold formatted rows (one per stock) for display.
-  const rowsToPrint: string[] = [];
+  const rowsToPrint: StockRow[] = [];
 
-  // Fetch all stock quotes concurrently.
   const promises = stocks.map(s => fetchStockQuote(s.symbol));
   const results = await Promise.all(promises);
 
-  // Process each result.
   results.forEach((quote, index) => {
     const stock = stocks[index];
     let price: number | null = null;
-    let priceStr = "N/A"; // Current price as string.
+    let priceStr = "N/A";
     let curr = "";
     let percentChange: number | null = null;
-    let percentChangePlain = "N/A";
+    let percentChangeStr = "N/A";
 
     if (quote && quote.regularMarketPrice !== undefined) {
-      price = quote.regularMarketPrice;
-      priceStr = price.toFixed(2);
-      curr = quote.currency || "";
-
-      // Record start price if not set.
-      if (startPrices[stock.symbol] === undefined) {
-        startPrices[stock.symbol] = price;
+      const fetchedPrice = Number(quote.regularMarketPrice);
+      if (!isNaN(fetchedPrice)) {
+        price = fetchedPrice;
+        priceStr = price.toFixed(2);
+        curr = quote.currency || "";
+  
+        if (startPrices[stock.symbol] === undefined) {
+          startPrices[stock.symbol] = price;
+        }
+        const initialPrice = startPrices[stock.symbol];
+        if (!isNaN(initialPrice) && initialPrice !== 0) {
+          percentChange = ((price - initialPrice) / initialPrice) * 100;
+          percentChangeStr = percentChange.toFixed(2) + "%";
+        } else {
+          percentChange = null;
+          percentChangeStr = "N/A";
+        }
+      } else {
+        console.warn(chalk.yellow(`Warning: Invalid price for ${stock.company} (${stock.symbol}).`));
       }
-      const initialPrice = startPrices[stock.symbol];
-      percentChange = ((price - initialPrice) / initialPrice) * 100;
-      percentChangePlain = percentChange.toFixed(2) + "%";
     }
-
-    // Build a record for logging.
+  
     const record: StockRecord = {
       company: stock.company,
       symbol: stock.symbol,
@@ -98,19 +105,20 @@ async function fetchAndDisplayStockData() {
       percentChange
     };
     recordEntries.push(record);
-
-    // Build plain (uncolored) pieces with padding.
+  
+    // Build plain text pieces with padding.
     const companyStr = stock.company.padEnd(22);
     const symbolStr = stock.symbol.padEnd(8);
-    const startPriceStr = initialPriceString(stock.symbol); // Already padded to 12.
-    const currentStr = priceStr.padStart(12);
-    const percentStr = percentChangePlain.padStart(12);
-
-    // Now apply chalk coloring to each column.
+    const startPriceStr = initialPriceString(stock.symbol); // Already padded.
+    // Combine current price and currency; width 18 to allow extra characters.
+    const currentCombined = (priceStr + " " + curr).padStart(18);
+    const percentStr = percentChangeStr.padStart(12);
+  
+    // Apply colors.
     const coloredCompany = chalk.gray(companyStr);
     const coloredSymbol = chalk.yellow(symbolStr);
     const coloredStart = chalk.white(startPriceStr);
-    const coloredCurrent = chalk.green(currentStr);
+    const coloredCurrent = chalk.green(currentCombined);
     const coloredPercent =
       percentChange !== null
         ? (percentChange > 0
@@ -119,41 +127,69 @@ async function fetchAndDisplayStockData() {
             ? chalk.red(percentStr)
             : chalk.white(percentStr))
         : chalk.white(percentStr);
-
-    // Concatenate the colored pieces.
-    const row = coloredCompany + coloredSymbol + coloredStart + coloredCurrent + chalk.bold(coloredPercent);
-    rowsToPrint.push(row);
+  
+    // Build the row.
+    const rowLine =
+      coloredCompany +
+      coloredSymbol +
+      coloredStart +
+      coloredCurrent +
+      chalk.bold(coloredPercent);
+    const rowObj: StockRow = {
+      firstLine: rowLine,
+      secondLine: ""
+    };
+  
+    // Append description if available.
+    const description = stockDescriptions[stock.symbol];
+    if (description) {
+      rowObj.secondLine = "    " + chalk.cyan(description);
+    }
+    rowsToPrint.push(rowObj);
   });
-
-  // Append this update to the display log.
+  
   const logEntry: DailyLogEntry = { timestamp: timestampStr, stocks: recordEntries };
-  displayLog.push(logEntry);
-  updateDisplayLogFile();
-
-  // Clear the console and print header.
+  dailyLog.push(logEntry);
+  updateDailyLogFile();
+  
+  // Print header.
   console.clear();
-  console.log(chalk.blueBright(`\n=== All Stock Data (Updated ${now.toLocaleTimeString()}) ===\n`));
-  const header =
+  console.log(chalk.blueBright(`\n=== Stock Prices (Updated ${now.toLocaleTimeString()}) ===\n`));
+  const header1 =
     chalk.bold("Company".padEnd(22)) +
     chalk.bold("Symbol".padEnd(8)) +
     chalk.bold("Start Price".padStart(12)) +
-    chalk.bold("Current".padStart(12)) +
+    chalk.bold("Current".padStart(18)) +
     chalk.bold("% Change".padStart(12));
-  console.log(header);
-  console.log(chalk.gray("-".repeat(66)));
-
-  // Print each row.
-  rowsToPrint.forEach(row => console.log(row));
+  console.log(header1);
+  console.log(chalk.gray("-".repeat(72)));
+  
+  if (rowsToPrint.length > 0) {
+    rowsToPrint.forEach(r => {
+      console.log(r.firstLine);
+      if (r.secondLine) console.log(r.secondLine);
+    });
+  } else {
+    console.log(chalk.gray("No significant price changes since last update."));
+  }
+  
+  if (isFirstUpdate) isFirstUpdate = false;
 }
 
-// Start updating every second.
-fetchAndDisplayStockData();
-const updateInterval = setInterval(fetchAndDisplayStockData, 1000);
+fetchAndPrintStockData();
+const updateInterval = setInterval(fetchAndPrintStockData, 5000);
 
-// Gracefully handle termination.
 process.on("SIGINT", () => {
-  console.log(chalk.red("\nTerminating display..."));
+  console.log(chalk.red("\nTerminating... Spawning dailySummary.ts"));
   clearInterval(updateInterval);
-  process.exit(0);
+  const { spawn } = require("child_process");
+  const summaryProcess = spawn("npx", ["ts-node", "src/dailySummary.ts"], { stdio: "inherit" });
+  summaryProcess.on("exit", (code: number) => {
+    fs.unlink(dailyLogPath, err => {
+      if (err) console.error(chalk.red("Error deleting daily log file:"), err);
+      else console.log(chalk.blue("Old daily log file deleted."));
+      process.exit(code);
+    });
+  });
 });
 
