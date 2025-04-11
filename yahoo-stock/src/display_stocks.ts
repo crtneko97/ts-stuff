@@ -1,3 +1,4 @@
+// src/displayStocks.ts
 
 import yahooFinance from "yahoo-finance2"; // For fetching Yahoo Finance data
 import chalk from "chalk";                 // For colorized console output
@@ -5,13 +6,13 @@ import * as fs from "fs";
 import * as path from "path";
 import { StockQuote, StockInfo, StockRecord, DailyLogEntry } from "./types/stockTypes";
 
-// File path for the daily log (if you wish to log as well; optional).
+// Set the file path for an optional log file in the "jsonlol" folder.
 const dailyLogPath = path.join(__dirname, "..", "jsonlol", "displayLog.json");
 
-// You can maintain an in‑memory log or simply display without logging.
+// Optionally, maintain an in‑memory log.
 let displayLog: DailyLogEntry[] = [];
 
-// List of stocks to track. (Same as before, but you can also add extra ones if desired.)
+// List of stocks to track.
 const stocks: StockInfo[] = [
   { company: "ATOSS SOFTWARE SE", symbol: "AOF.DE" },
   { company: "ENVAR", symbol: "ENVAR.ST" },
@@ -27,13 +28,13 @@ const stocks: StockInfo[] = [
   { company: "Hexagon AB", symbol: "HEXA.ST" }
 ];
 
-// Object to store the start price for each stock (once set at the first update).
+// Object to store the start price for each stock (set once when the run starts).
 const startPrices: { [symbol: string]: number } = {};
 
 /**
  * Fetches the latest stock quote for a given symbol.
  * @param symbol - The Yahoo Finance stock symbol.
- * @returns A Promise that resolves to a StockQuote, or null if an error occurs.
+ * @returns A Promise resolving to a StockQuote or null if an error occurs.
  */
 async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
   try {
@@ -46,7 +47,7 @@ async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
 }
 
 /**
- * Helper function to return a formatted string for the start price.
+ * Helper function that returns the start price as a padded string (12 characters).
  * @param symbol - Stock symbol.
  */
 function initialPriceString(symbol: string): string {
@@ -55,7 +56,7 @@ function initialPriceString(symbol: string): string {
 }
 
 /**
- * Writes the display log to a JSON file.
+ * Writes the display log to a JSON file (optional logging).
  */
 function updateDisplayLogFile() {
   fs.writeFile(dailyLogPath, JSON.stringify(displayLog, null, 2), err => {
@@ -64,8 +65,9 @@ function updateDisplayLogFile() {
 }
 
 /**
- * Fetches all stock quotes and displays all data even if there’s no change.
- * This version prints every stock’s data on every update.
+ * Fetches all stock quotes and displays all data on every update.
+ * The table contains: Company, Symbol, Start Price, Current Price, and % Change.
+ * Padding is applied to uncolored strings first, then colors are applied.
  */
 async function fetchAndDisplayStockData() {
   const now = new Date();
@@ -73,43 +75,36 @@ async function fetchAndDisplayStockData() {
 
   // Array to hold stock records for logging.
   const recordEntries: StockRecord[] = [];
-
-  // Array to hold formatted rows (one per stock) for printing.
+  // Array to hold formatted rows (one per stock).
   const rowsToPrint: string[] = [];
 
   // Fetch all stock quotes concurrently.
   const promises = stocks.map(s => fetchStockQuote(s.symbol));
   const results = await Promise.all(promises);
 
-  // Process the results.
   results.forEach((quote, index) => {
     const stock = stocks[index];
     let price: number | null = null;
     let priceStr = "N/A";
     let curr = "";
     let percentChange: number | null = null;
-    let percentChangeStr = "N/A";
+    let percentChangePlain = "N/A";
 
     if (quote && quote.regularMarketPrice !== undefined) {
       price = quote.regularMarketPrice;
       priceStr = price.toFixed(2);
       curr = quote.currency || "";
 
-      // Set and/or record the start price.
+      // Set the start price if not set already.
       if (startPrices[stock.symbol] === undefined) {
         startPrices[stock.symbol] = price;
       }
       const initialPrice = startPrices[stock.symbol];
       percentChange = ((price - initialPrice) / initialPrice) * 100;
-      percentChangeStr =
-        percentChange > 0
-          ? chalk.green(percentChange.toFixed(2) + "%")
-          : percentChange < 0
-          ? chalk.red(percentChange.toFixed(2) + "%")
-          : chalk.white(percentChange.toFixed(2) + "%");
+      percentChangePlain = percentChange.toFixed(2) + "%";
     }
 
-    // Build a record for logging.
+    // Build a record for the log.
     const record: StockRecord = {
       company: stock.company,
       symbol: stock.symbol,
@@ -119,13 +114,29 @@ async function fetchAndDisplayStockData() {
     };
     recordEntries.push(record);
 
-    // Build a formatted row (single row for each stock).
-    const row =
-      chalk.gray(stock.company.padEnd(22)) +
-      chalk.yellow(stock.symbol.padEnd(8)) +
-      chalk.white(initialPriceString(stock.symbol)) +
-      chalk.green(priceStr.padStart(12)) +
-      chalk.bold(percentChangeStr.padStart(12));
+    // Build uncolored string pieces with padding.
+    const companyStr = stock.company.padEnd(22);
+    const symbolStr = stock.symbol.padEnd(8);
+    const startPriceStr = initialPriceString(stock.symbol); // already padded to 12
+    const currentStr = priceStr.padStart(12);
+    const percentStr = percentChangePlain.padStart(12);
+
+    // Now apply colors.
+    const coloredCompany = chalk.gray(companyStr);
+    const coloredSymbol = chalk.yellow(symbolStr);
+    const coloredStart = chalk.white(startPriceStr);
+    const coloredCurrent = chalk.green(currentStr);
+    const coloredPercent =
+      percentChange !== null
+        ? percentChange > 0
+          ? chalk.green(percentStr)
+          : percentChange < 0
+          ? chalk.red(percentStr)
+          : chalk.white(percentStr)
+        : chalk.white(percentStr);
+
+    // Build the final line: Company, Symbol, Start Price, Current Price, % Change.
+    const row = coloredCompany + coloredSymbol + coloredStart + coloredCurrent + chalk.bold(coloredPercent);
     rowsToPrint.push(row);
   });
 
@@ -146,17 +157,18 @@ async function fetchAndDisplayStockData() {
   console.log(header);
   console.log(chalk.gray("-".repeat(66)));
 
-  // Print every stock's data.
+  // Print every stock's line.
   rowsToPrint.forEach(row => console.log(row));
 }
 
-// Update every 5 seconds (or as desired).
+// Start updating every second.
 fetchAndDisplayStockData();
-const updateInterval = setInterval(fetchAndDisplayStockData, 5000);
+const updateInterval = setInterval(fetchAndDisplayStockData, 1000);
 
-// To handle termination gracefully:
+// Handle termination gracefully.
 process.on("SIGINT", () => {
   console.log(chalk.red("\nTerminating display..."));
   clearInterval(updateInterval);
   process.exit(0);
 });
+
