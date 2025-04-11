@@ -1,32 +1,20 @@
+// src/index.ts
 
 import yahooFinance from "yahoo-finance2"; // For fetching Yahoo Finance data
 import chalk from "chalk";                 // For colorized console output
 import * as fs from "fs";
 import * as path from "path";
-import { StockQuote, StockInfo } from "./types/stockTypes";
+
+// Import the types from the types file.
+import { StockQuote, StockInfo, StockRecord, DailyLogEntry, StockRow } from "./types/stockTypes";
 
 // File path for the daily log in the "jsonlol" folder.
 const dailyLogPath = path.join(__dirname, "..", "jsonlol", "dailyLog.json");
 
-// Defines the data structure for each stock record in the log.
-interface StockRecord {
-  company: string;
-  symbol: string;
-  price: number | null;
-  currency: string;
-  percentChange: number | null; // Percentage change computed relative to the start price.
-}
-
-// Each daily log entry contains a timestamp and an array of stock records.
-interface DailyLogEntry {
-  timestamp: string;  // ISO timestamp for each update.
-  stocks: StockRecord[];
-}
-
-// In‑memory daily log (all updates will be appended here).
+// In‑memory daily log (updates will be appended here).
 let dailyLog: DailyLogEntry[] = [];
 
-// List of stocks to track (including added stocks such as Nvidia, ASUS, Hexagon AB, etc.).
+// List of stocks to track.
 const stocks: StockInfo[] = [
   { company: "ATOSS SOFTWARE SE", symbol: "AOF.DE" },
   { company: "ENVAR", symbol: "ENVAR.ST" },
@@ -45,14 +33,14 @@ const stocks: StockInfo[] = [
 // Object to store the start price for each stock (set once when the run starts).
 const startPrices: { [symbol: string]: number } = {};
 
-// A threshold (in percent) under which we will not print updates (except on the very first update).
+// A threshold (in percent) below which the update is not printed (except on the first update).
 const THRESHOLD = 0.05;
 
 // Flag to indicate if this is the very first update.
 let isFirstUpdate = true;
 
 /**
- * Fetches the latest stock quote for a given symbol using yahoo-finance2.
+ * Fetches the latest stock quote for a given symbol.
  * @param symbol - The Yahoo Finance stock symbol.
  * @returns A Promise that resolves to a StockQuote, or null if an error occurs.
  */
@@ -67,119 +55,7 @@ async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
 }
 
 /**
- * Fetches all stock quotes, computes percentage change based on the start price,
- * logs every update, and prints a detailed table with one row per stock.
- * Only stocks with a percent change (absolute value) of at least THRESHOLD (0.05%)
- * are printed on updates after the first.
- */
-async function fetchAndPrintStockData() {
-  const now = new Date();
-  const timestampStr = now.toISOString();
-
-  // Array to hold each stock record for the log.
-  const recordEntries: StockRecord[] = [];
-  // Array to hold formatted rows (one per stock) for printing.
-  const rowsToPrint: string[] = [];
-
-  // Fetch all stock quotes concurrently.
-  const promises = stocks.map(s => fetchStockQuote(s.symbol));
-  const results = await Promise.all(promises);
-
-  results.forEach((quote, index) => {
-    const stock = stocks[index];
-    let price: number | null = null;
-    let priceStr = "N/A";
-    let curr = "";
-    let percentChange: number | null = null;
-    let percentChangeStr = "N/A";
-
-    if (quote && quote.regularMarketPrice !== undefined) {
-      // Current price fetched from the API.
-      price = quote.regularMarketPrice;
-      priceStr = price.toFixed(2);
-      curr = quote.currency || "";
-
-      // Set the start price if it is not already set.
-      if (startPrices[stock.symbol] === undefined) {
-        startPrices[stock.symbol] = price;
-      }
-      // Compute percent change relative to the start price.
-      const initialPrice = startPrices[stock.symbol];
-      percentChange = ((price - initialPrice) / initialPrice) * 100;
-      // Format the percent change with color coding.
-      percentChangeStr =
-        percentChange > 0
-          ? chalk.green(percentChange.toFixed(2) + "%")
-          : percentChange < 0
-          ? chalk.red(percentChange.toFixed(2) + "%")
-          : chalk.white(percentChange.toFixed(2) + "%");
-    }
-
-    // Build a record for logging.
-    const record: StockRecord = {
-      company: stock.company,
-      symbol: stock.symbol,
-      price,
-      currency: curr,
-      percentChange
-    };
-    recordEntries.push(record);
-
-    // Condition for printing the row:
-    // Always print for the first update.
-    // On subsequent updates, only print if the absolute percent change is >= THRESHOLD.
-    if (
-      isFirstUpdate ||
-      (percentChange !== null && Math.abs(percentChange) >= THRESHOLD)
-    ) {
-      // Build a formatted row with all desired data.
-      // The row now shows: Company | Symbol | Start Price | Current Price | % Change
-      const row =
-        chalk.gray(stock.company.padEnd(22)) +
-        chalk.yellow(stock.symbol.padEnd(8)) +
-        chalk.white(initialPriceString(stock.symbol)) +
-        chalk.green(priceStr.padStart(12)) +
-        percentChangeStr.padStart(12);
-      rowsToPrint.push(row);
-    }
-  });
-
-  // Append this update to the daily log.
-  const logEntry: DailyLogEntry = {
-    timestamp: timestampStr,
-    stocks: recordEntries
-  };
-  dailyLog.push(logEntry);
-  updateDailyLogFile();
-
-  // Print the table header.
-  console.log(chalk.blueBright(`\n=== Stock Prices (Updated ${now.toLocaleTimeString()}) ===\n`));
-  // Build header: Company, Symbol, Start Price, Current Price, % Change.
-  const header =
-    chalk.bold("Company".padEnd(22)) +
-    chalk.bold("Symbol".padEnd(8)) +
-    chalk.bold("Start Price".padStart(12)) +
-    chalk.bold("Current".padStart(12)) +
-    chalk.bold("% Change".padStart(12));
-  console.log(header);
-  console.log(chalk.gray("-".repeat(66)));
-
-  // Print each formatted row.
-  if (rowsToPrint.length > 0) {
-    rowsToPrint.forEach(row => console.log(row));
-  } else {
-    console.log(chalk.gray("No significant price changes since last update."));
-  }
-
-  // After printing the first update, set the flag to false.
-  if (isFirstUpdate) {
-    isFirstUpdate = false;
-  }
-}
-
-/**
- * Helper function to create a formatted string for the start price.
- * Returns the start price for a given stock symbol (or "N/A" if not set),
+ * Helper function to return a formatted string of a stock's start price,
  * padded to 12 characters.
  * @param symbol - Stock symbol.
  */
@@ -199,14 +75,112 @@ function updateDailyLogFile() {
   });
 }
 
+/**
+ * Fetches all stock quotes, computes percentage change based on the start price,
+ * logs every update, and prints a two‑line output for each stock.
+ * Only stocks with an absolute percent change >= THRESHOLD are printed (after the first update).
+ */
+async function fetchAndPrintStockData() {
+  const now = new Date();
+  const timestampStr = now.toISOString();
+
+  // Arrays to hold stock records for logging and printed rows.
+  const recordEntries: StockRecord[] = [];
+  const rowsToPrint: StockRow[] = [];
+
+  // Fetch all quotes concurrently.
+  const promises = stocks.map(s => fetchStockQuote(s.symbol));
+  const results = await Promise.all(promises);
+
+  results.forEach((quote, index) => {
+    const stock = stocks[index];
+    let price: number | null = null;
+    let priceStr = "N/A";
+    let curr = "";
+    let percentChange: number | null = null;
+    let percentChangeStr = "N/A";
+
+    if (quote && quote.regularMarketPrice !== undefined) {
+      price = quote.regularMarketPrice;
+      priceStr = price.toFixed(2);
+      curr = quote.currency || "";
+
+      // Record start price if not set.
+      if (startPrices[stock.symbol] === undefined) {
+        startPrices[stock.symbol] = price;
+      }
+      const initialPrice = startPrices[stock.symbol];
+      percentChange = ((price - initialPrice) / initialPrice) * 100;
+      percentChangeStr =
+        percentChange > 0
+          ? chalk.green(percentChange.toFixed(2) + "%")
+          : percentChange < 0
+          ? chalk.red(percentChange.toFixed(2) + "%")
+          : chalk.white(percentChange.toFixed(2) + "%");
+    }
+
+    // Build a record for logging.
+    const record: StockRecord = {
+      company: stock.company,
+      symbol: stock.symbol,
+      price,
+      currency: curr,
+      percentChange
+    };
+    recordEntries.push(record);
+
+    // On the first update, print everything. Otherwise, only print if |percentChange| >= THRESHOLD.
+    if (isFirstUpdate || (percentChange !== null && Math.abs(percentChange) >= THRESHOLD)) {
+      // Build first line: Company, Symbol, Start Price, Current Price.
+      const line1 =
+        chalk.gray(stock.company.padEnd(22)) +
+        chalk.yellow(stock.symbol.padEnd(8)) +
+        chalk.white(initialPriceString(stock.symbol)) +
+        chalk.green(priceStr.padStart(12));
+      // Build second line: indent columns for Company, Symbol, Start Price, then show "Change:" and the percentage.
+      const indent = " ".repeat(22 + 8 + 12);
+      const line2 = indent + chalk.bold("Change:").padStart(8) + percentChangeStr.padStart(12);
+      rowsToPrint.push({ firstLine: line1, secondLine: line2 });
+    }
+  });
+
+  // Append the update to the daily log.
+  const logEntry: DailyLogEntry = { timestamp: timestampStr, stocks: recordEntries };
+  dailyLog.push(logEntry);
+  updateDailyLogFile();
+
+  // Print table header (two lines).
+  console.log(chalk.blueBright(`\n=== Stock Prices (Updated ${now.toLocaleTimeString()}) ===\n`));
+  const header1 =
+    chalk.bold("Company".padEnd(22)) +
+    chalk.bold("Symbol".padEnd(8)) +
+    chalk.bold("Start Price".padStart(12)) +
+    chalk.bold("Current".padStart(12));
+  console.log(header1);
+  const header2 = " ".repeat(22 + 8 + 12) + chalk.bold("Change".padStart(12));
+  console.log(header2);
+  console.log(chalk.gray("-".repeat(66)));
+
+  // Print each stock's two-line output.
+  if (rowsToPrint.length > 0) {
+    rowsToPrint.forEach(r => {
+      console.log(r.firstLine);
+      console.log(r.secondLine);
+    });
+  } else {
+    console.log(chalk.gray("No significant price changes since last update."));
+  }
+
+  if (isFirstUpdate) { isFirstUpdate = false; }
+}
+
 // Start capturing data immediately.
 fetchAndPrintStockData();
 // Schedule updates every 5 seconds.
 const updateInterval = setInterval(fetchAndPrintStockData, 5000);
 
 /**
- * When the process is terminated (e.g. Ctrl+C), spawn the daily summary script
- * and delete the old daily log file.
+ * On termination (Ctrl+C), spawn the dailySummary.ts script and delete the daily log.
  */
 process.on("SIGINT", () => {
   console.log(chalk.red("\nTerminating... Spawning dailySummary.ts"));

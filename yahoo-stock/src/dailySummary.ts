@@ -3,54 +3,31 @@
 import * as fs from "fs";
 import * as path from "path";
 import chalk from "chalk";
+import { StockRecord, DailyLogEntry, SymbolStats } from "./types/stockTypes";
 
+// Define paths for the log and summary files.
 const dailyLogPath = path.join(__dirname, "..", "jsonlol", "dailyLog.json");
 const dailySummaryPath = path.join(__dirname, "..", "jsonlol", "dailySummary.json");
 
-interface StockRecord {
-  company: string;
-  symbol: string;
-  price: number | null;
-  currency: string;
-  percentChange: number | null;
-}
-
-interface DailyLogEntry {
-  timestamp: string; // time of the update
-  stocks: StockRecord[];
-}
-
-// For collecting stats on each symbol:
-interface SymbolStats {
-  company: string;
-  symbol: string;
-  sum: number;
-  count: number;
-  min: number;
-  minTime: string;
-  max: number;
-  maxTime: string;
-}
-
+// Read the daily log file.
 fs.readFile(dailyLogPath, "utf8", (err, data) => {
   if (err) {
     console.error(chalk.red("Error reading daily log file:"), err);
     process.exit(1);
   }
-
+  
   try {
     const dailyLog: DailyLogEntry[] = JSON.parse(data);
 
-    // We'll store stats for each symbol here.
-    // Start min at Infinity and max at -Infinity to easily compare later.
+    // Create a map for collecting stats per stock.
     const statsMap: { [symbol: string]: SymbolStats } = {};
 
-    // Build or update stats as we parse the log.
+    // Process each log entry.
     dailyLog.forEach(entry => {
-      const timestamp = entry.timestamp; 
+      const timestamp = entry.timestamp;
       entry.stocks.forEach(stock => {
         if (stock.price !== null) {
-          // If not in statsMap yet, initialize:
+          // Initialize stats for this stock if not already present.
           if (!statsMap[stock.symbol]) {
             statsMap[stock.symbol] = {
               company: stock.company,
@@ -63,17 +40,16 @@ fs.readFile(dailyLogPath, "utf8", (err, data) => {
               maxTime: ""
             };
           }
-
           const symbolStats = statsMap[stock.symbol];
           symbolStats.sum += stock.price;
           symbolStats.count += 1;
 
-          // Check for a new min price:
+          // Update minimum price and timestamp if this is a new minimum.
           if (stock.price < symbolStats.min) {
             symbolStats.min = stock.price;
             symbolStats.minTime = timestamp;
           }
-          // Check for a new max price:
+          // Update maximum price and timestamp if this is a new maximum.
           if (stock.price > symbolStats.max) {
             symbolStats.max = stock.price;
             symbolStats.maxTime = timestamp;
@@ -82,7 +58,7 @@ fs.readFile(dailyLogPath, "utf8", (err, data) => {
       });
     });
 
-    // Build final summary with average, min, max, etc.
+    // Build the final summary array.
     const finalSummary = Object.values(statsMap).map(s => {
       const averagePrice = s.count > 0 ? s.sum / s.count : 0;
       return {
@@ -96,15 +72,14 @@ fs.readFile(dailyLogPath, "utf8", (err, data) => {
       };
     });
 
-    // Write summary to dailySummaryPath
+    // Write the final summary to a JSON file.
     fs.writeFile(dailySummaryPath, JSON.stringify(finalSummary, null, 2), err => {
       if (err) {
         console.error(chalk.red("Error writing daily summary file:"), err);
         process.exit(1);
       } else {
         console.log(chalk.blue("Daily summary written to"), dailySummaryPath);
-
-        // Print summary to console
+        // Print the summary to the console.
         console.log(chalk.magenta("\n=== Daily Summary ==="));
         finalSummary.forEach(item => {
           console.log(
