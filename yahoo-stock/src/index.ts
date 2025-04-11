@@ -1,11 +1,8 @@
-// src/index.ts
-
 import yahooFinance from "yahoo-finance2"; // For fetching Yahoo Finance data
 import chalk from "chalk";                 // For colorized console output
 import * as fs from "fs";
 import * as path from "path";
-
-// Import the types from the types file.
+// Import types from the centralized file.
 import { StockQuote, StockInfo, StockRecord, DailyLogEntry, StockRow } from "./types/stockTypes";
 
 // File path for the daily log in the "jsonlol" folder.
@@ -33,16 +30,15 @@ const stocks: StockInfo[] = [
 // Object to store the start price for each stock (set once when the run starts).
 const startPrices: { [symbol: string]: number } = {};
 
-// A threshold (in percent) below which the update is not printed (except on the first update).
+// A threshold (in percent) below which updates (except the first) are not printed.
 const THRESHOLD = 0.05;
 
-// Flag to indicate if this is the very first update.
+// Flag to indicate if this is the first update.
 let isFirstUpdate = true;
 
 /**
  * Fetches the latest stock quote for a given symbol.
  * @param symbol - The Yahoo Finance stock symbol.
- * @returns A Promise that resolves to a StockQuote, or null if an error occurs.
  */
 async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
   try {
@@ -55,8 +51,7 @@ async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
 }
 
 /**
- * Helper function to return a formatted string of a stock's start price,
- * padded to 12 characters.
+ * Helper function that returns a formatted string for a stock's start price.
  * @param symbol - Stock symbol.
  */
 function initialPriceString(symbol: string): string {
@@ -69,26 +64,22 @@ function initialPriceString(symbol: string): string {
  */
 function updateDailyLogFile() {
   fs.writeFile(dailyLogPath, JSON.stringify(dailyLog, null, 2), err => {
-    if (err) {
-      console.error(chalk.red("Error writing daily log file:"), err);
-    }
+    if (err) console.error(chalk.red("Error writing daily log file:"), err);
   });
 }
 
 /**
- * Fetches all stock quotes, computes percentage change based on the start price,
- * logs every update, and prints a two‑line output for each stock.
- * Only stocks with an absolute percent change >= THRESHOLD are printed (after the first update).
+ * Fetches all stock quotes, calculates the percentage change relative to the start price,
+ * logs the update, and prints a two‑line output for each stock.
+ * Only stocks with an absolute percentage change of at least THRESHOLD are printed (after the first update).
  */
 async function fetchAndPrintStockData() {
   const now = new Date();
   const timestampStr = now.toISOString();
 
-  // Arrays to hold stock records for logging and printed rows.
   const recordEntries: StockRecord[] = [];
   const rowsToPrint: StockRow[] = [];
 
-  // Fetch all quotes concurrently.
   const promises = stocks.map(s => fetchStockQuote(s.symbol));
   const results = await Promise.all(promises);
 
@@ -105,7 +96,6 @@ async function fetchAndPrintStockData() {
       priceStr = price.toFixed(2);
       curr = quote.currency || "";
 
-      // Record start price if not set.
       if (startPrices[stock.symbol] === undefined) {
         startPrices[stock.symbol] = price;
       }
@@ -119,7 +109,6 @@ async function fetchAndPrintStockData() {
           : chalk.white(percentChange.toFixed(2) + "%");
     }
 
-    // Build a record for logging.
     const record: StockRecord = {
       company: stock.company,
       symbol: stock.symbol,
@@ -129,27 +118,23 @@ async function fetchAndPrintStockData() {
     };
     recordEntries.push(record);
 
-    // On the first update, print everything. Otherwise, only print if |percentChange| >= THRESHOLD.
     if (isFirstUpdate || (percentChange !== null && Math.abs(percentChange) >= THRESHOLD)) {
-      // Build first line: Company, Symbol, Start Price, Current Price.
       const line1 =
         chalk.gray(stock.company.padEnd(22)) +
         chalk.yellow(stock.symbol.padEnd(8)) +
         chalk.white(initialPriceString(stock.symbol)) +
         chalk.green(priceStr.padStart(12));
-      // Build second line: indent columns for Company, Symbol, Start Price, then show "Change:" and the percentage.
       const indent = " ".repeat(22 + 8 + 12);
       const line2 = indent + chalk.bold("Change:").padStart(8) + percentChangeStr.padStart(12);
       rowsToPrint.push({ firstLine: line1, secondLine: line2 });
     }
   });
 
-  // Append the update to the daily log.
   const logEntry: DailyLogEntry = { timestamp: timestampStr, stocks: recordEntries };
   dailyLog.push(logEntry);
   updateDailyLogFile();
 
-  // Print table header (two lines).
+  // Print the table header (two lines).
   console.log(chalk.blueBright(`\n=== Stock Prices (Updated ${now.toLocaleTimeString()}) ===\n`));
   const header1 =
     chalk.bold("Company".padEnd(22)) +
@@ -161,7 +146,6 @@ async function fetchAndPrintStockData() {
   console.log(header2);
   console.log(chalk.gray("-".repeat(66)));
 
-  // Print each stock's two-line output.
   if (rowsToPrint.length > 0) {
     rowsToPrint.forEach(r => {
       console.log(r.firstLine);
@@ -171,17 +155,12 @@ async function fetchAndPrintStockData() {
     console.log(chalk.gray("No significant price changes since last update."));
   }
 
-  if (isFirstUpdate) { isFirstUpdate = false; }
+  if (isFirstUpdate) isFirstUpdate = false;
 }
 
-// Start capturing data immediately.
 fetchAndPrintStockData();
-// Schedule updates every 5 seconds.
 const updateInterval = setInterval(fetchAndPrintStockData, 5000);
 
-/**
- * On termination (Ctrl+C), spawn the dailySummary.ts script and delete the daily log.
- */
 process.on("SIGINT", () => {
   console.log(chalk.red("\nTerminating... Spawning dailySummary.ts"));
   clearInterval(updateInterval);
