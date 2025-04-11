@@ -1,0 +1,42 @@
+[
+  {
+    "company": "ATOSS SOFTWARE SE",
+    "symbol": "AOF.DE",
+    "averagePrice": 127
+  },
+  {
+    "company": "ENVAR",
+    "symbol": "ENVAR.ST",
+    "averagePrice": 17
+  },
+  {
+    "company": "Intel",
+    "symbol": "INTC",
+    "averagePrice": 18.831475
+  },
+  {
+    "company": "INVISIO",
+    "symbol": "IVSO.ST",
+    "averagePrice": 358.5
+  },
+  {
+    "company": "Ovzon",
+    "symbol": "OVZON.ST",
+    "averagePrice": 26.8
+  },
+  {
+    "company": "Star Vault B",
+    "symbol": "STVA-B.ST",
+    "averagePrice": 0.099
+  },
+  {
+    "company": "Telenor",
+    "symbol": "TEL.OL",
+    "averagePrice": 143.1
+  },
+  {
+    "company": "SKF",
+    "symbol": "SKF-B.ST",
+    "averagePrice": 170.55
+  }
+]
