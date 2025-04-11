@@ -7,7 +7,7 @@ import { StockQuote, StockInfo, StockRecord, DailyLogEntry, StockRow } from "./t
 import { stocks } from "./stock_list";
 import { stockDescriptions } from "./stockDescriptions";
 
-// File path for the daily log in the src folder.
+// File path for the log file in the src folder.
 const dailyLogPath = path.join(__dirname, "daily_log.json");
 
 // In‑memory daily log (updates will be appended here).
@@ -56,7 +56,7 @@ function updateDailyLogFile() {
 }
 
 /**
- * Fetches all stock quotes, calculates the percentage change relative to the start price,
+ * Fetches all stock quotes, calculates the % change relative to the start price,
  * logs the update, and prints a two‑line output for each stock.
  * Only stocks with an absolute percentage change of at least THRESHOLD are printed (after the first update).
  */
@@ -101,7 +101,6 @@ async function fetchAndPrintStockData() {
       }
     }
 
-    // Build a record for logging.
     const record: StockRecord = {
       company: stock.company,
       symbol: stock.symbol,
@@ -111,21 +110,22 @@ async function fetchAndPrintStockData() {
     };
     recordEntries.push(record);
 
-    // Only include in display if it's the first update or if the absolute percentage change meets threshold.
+    // Only include display rows for the first update, or if the price change meets the threshold.
     if (isFirstUpdate || (percentChange !== null && Math.abs(percentChange) >= THRESHOLD)) {
       // Build plain text pieces with padding.
       const companyStr = stock.company.padEnd(22);
       const symbolStr = stock.symbol.padEnd(8);
-      const startPriceStr = initialPriceString(stock.symbol); // Already padded to 12.
-      // Combine current price and currency. Set width to 18.
+      const startPriceStr = initialPriceString(stock.symbol);
+      // Combine current price and currency with a width of 18.
       const currentCombined = (priceStr + " " + curr).padStart(18);
       const percentStr = percentChangeStr.padStart(12);
 
-      // Apply colors. For Current, compare to start price.
+      // Apply color formatting.
       const coloredCompany = chalk.gray(companyStr);
       const coloredSymbol = chalk.yellow(symbolStr);
       const coloredStart = chalk.white(startPriceStr);
-      let coloredCurrent = chalk.green(currentCombined); // default if above or equal.
+      // Color the current price based on comparison with the start price.
+      let coloredCurrent = chalk.green(currentCombined);
       if (price !== null && startPrices[stock.symbol] !== undefined) {
         const initialPrice = startPrices[stock.symbol];
         if (price < initialPrice) {
@@ -145,24 +145,11 @@ async function fetchAndPrintStockData() {
               : chalk.white(percentStr))
           : chalk.white(percentStr);
 
-      // Build the row.
-      const rowLine =
-        coloredCompany +
-        coloredSymbol +
-        coloredStart +
-        coloredCurrent +
-        chalk.bold(coloredPercent);
-      const rowObj: StockRow = {
-        firstLine: rowLine,
-        secondLine: ""
-      };
-
-      // Append the description if available.
-      const description = stockDescriptions[stock.symbol];
-      if (description) {
-        rowObj.secondLine = "    " + chalk.cyan(description);
-      }
-      rowsToPrint.push(rowObj);
+      // Build the row as a two-line output.
+      const line1 = coloredCompany + coloredSymbol + coloredStart + coloredCurrent + chalk.bold(coloredPercent);
+      const indent = " ".repeat(22 + 8 + 12);
+      const line2 = indent + chalk.bold("Change:").padStart(8) + percentStr;
+      rowsToPrint.push({ firstLine: line1, secondLine: line2 });
     }
   });
 
@@ -171,7 +158,6 @@ async function fetchAndPrintStockData() {
   updateDailyLogFile();
 
   // Print header.
-  console.clear();
   console.log(chalk.blueBright(`\n=== Stock Prices (Updated ${now.toLocaleTimeString()}) ===\n`));
   const header1 =
     chalk.bold("Company".padEnd(22)) +
