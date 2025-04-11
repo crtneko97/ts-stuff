@@ -6,29 +6,29 @@ import * as fs from "fs";
 import * as path from "path";
 import { StockQuote, StockInfo } from "./types/stockTypes";
 
-// File path for the daily log in the "jsonlol" folder.
+// The JSON log file will be created in the "jsonlol" folder (assumed to be in the project root).
 const dailyLogPath = path.join(__dirname, "..", "jsonlol", "dailyLog.json");
 
-// Define the structure of each stock record saved in the log.
+// Defines the data structure for each stock record in the log.
 interface StockRecord {
   company: string;
   symbol: string;
   price: number | null;
   currency: string;
-  percentChange: number | null; // null if no previous price exists
+  percentChange: number | null; // null if no previous price for comparison
 }
 
-// Each log entry holds a timestamp and an array of stock records.
+// Each daily log entry contains a timestamp and an array of stock records.
 interface DailyLogEntry {
-  timestamp: string;  // ISO timestamp for each update
+  timestamp: string;  // ISO timestamp for the update
   stocks: StockRecord[];
 }
 
-// In-memory daily log array.
+// In‑memory daily log (all updates are appended here).
 let dailyLog: DailyLogEntry[] = [];
 
-// List of stocks to track.
-// Note: "NASDAQ| Bitcoin Depot A" is added with ticker "BTC-USD" (commonly used for Bitcoin price in USD).
+// List of stocks to track—now with additional stocks for Nvidia, ASUS, and Hexagon AB.
+// You can adjust the ticker symbols as needed.
 const stocks: StockInfo[] = [
   { company: "ATOSS SOFTWARE SE", symbol: "AOF.DE" },
   { company: "ENVAR", symbol: "ENVAR.ST" },
@@ -38,16 +38,19 @@ const stocks: StockInfo[] = [
   { company: "Star Vault B", symbol: "STVA-B.ST" },
   { company: "Telenor", symbol: "TEL.OL" },
   { company: "SKF", symbol: "SKF-B.ST" },
-  { company: "NASDAQ| Bitcoin Depot A", symbol: "BTC-USD" }
+  { company: "NASDAQ| Bitcoin Depot A", symbol: "BTC-USD" },
+  { company: "Nvidia", symbol: "NVDA" },
+  { company: "ASUS", symbol: "2357.TW" },
+  { company: "Hexagon AB", symbol: "HEXA.ST" }
 ];
 
-// Object to store the previous market price for each stock (for computing changes).
+// Object to store the previous prices for each stock (for calculating percent change).
 const previousPrices: { [symbol: string]: number } = {};
 
 /**
- * Fetches a single stock quote using yahoo-finance2.
+ * Fetches the latest stock quote for a given symbol using yahoo-finance2.
  * @param symbol - The Yahoo Finance stock symbol.
- * @returns A Promise that resolves to a StockQuote or null if an error occurs.
+ * @returns A Promise resolving to a StockQuote or null if an error occurs.
  */
 async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
   try {
@@ -60,24 +63,23 @@ async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
 }
 
 /**
- * Fetches all stock quotes, logs the update, and prints only changed records.
+ * Fetches all stock quotes, creates formatted rows for stocks with a price change,
+ * logs every update, and prints the data in two columns per row.
  */
 async function fetchAndPrintStockData() {
-  // Get current timestamp.
   const now = new Date();
   const timestampStr = now.toISOString();
 
-  // Array to hold stock records for the current update (for logging).
+  // Array to hold each stock record for the log.
   const recordEntries: StockRecord[] = [];
-
-  // Array to collect rows that will be printed (only if there's a change).
+  // Array to hold formatted string rows to be printed.
   const rowsToPrint: string[] = [];
 
   // Fetch all stock quotes concurrently.
   const promises = stocks.map(s => fetchStockQuote(s.symbol));
   const results = await Promise.all(promises);
 
-  // Process each stock's result.
+  // Process each stock result.
   results.forEach((quote, index) => {
     const stock = stocks[index];
     let price: number | null = null;
@@ -86,15 +88,16 @@ async function fetchAndPrintStockData() {
     let percentChange: number | null = null;
     let percentChangeStr = "N/A";
 
+    // If valid data was returned:
     if (quote && quote.regularMarketPrice !== undefined) {
       price = quote.regularMarketPrice;
       priceStr = price.toFixed(2);
       curr = quote.currency || "";
 
-      // Calculate percent change if a previous price exists.
+      // If there is a previous price, calculate the percent change.
       if (previousPrices[stock.symbol] !== undefined) {
         const oldPrice = previousPrices[stock.symbol];
-        // Only calculate change if there is any difference.
+        // Only if the price differs from the previous update.
         if (price !== oldPrice) {
           const change = price - oldPrice;
           percentChange = (change / oldPrice) * 100;
@@ -102,11 +105,11 @@ async function fetchAndPrintStockData() {
           percentChange = 0;
         }
       }
-      // Save or update the previous price.
+      // Update previous price for next calculation.
       previousPrices[stock.symbol] = price;
     }
 
-    // Build the record for logging.
+    // Build a record for logging.
     const record: StockRecord = {
       company: stock.company,
       symbol: stock.symbol,
@@ -116,11 +119,15 @@ async function fetchAndPrintStockData() {
     };
     recordEntries.push(record);
 
-    // Build the formatted row for console output.
-    // We'll include the row only if this is the first update or if the price has changed.
-    const shouldPrint = (previousPrices[stock.symbol] === price) ? (percentChange === 0 && previousPrices[stock.symbol] !== undefined ? false : true) : true;
-    // For first update, previous price is undefined so shouldPrint will be true.
+    // Decide whether to print this stock’s row:
+    // Print if this is the first update (no prior price) or if there's a nonzero percent change.
+    const shouldPrint = (previousPrices[stock.symbol] === price && (percentChange === null || percentChange !== 0))
+      || (percentChange !== null && percentChange !== 0);
+    // (On first update, previousPrices[stock.symbol] is set just now, so it always prints.)
+
     if (shouldPrint) {
+      // Build the formatted row.
+      // Adjust the padding widths as needed:
       const row =
         chalk.gray(stock.company.padEnd(22)) +
         chalk.yellow(stock.symbol.padEnd(8)) +
@@ -137,7 +144,7 @@ async function fetchAndPrintStockData() {
     }
   });
 
-  // Append the update (regardless of printing) to the daily log.
+  // Append this update to the daily log.
   const logEntry: DailyLogEntry = {
     timestamp: timestampStr,
     stocks: recordEntries
@@ -145,20 +152,29 @@ async function fetchAndPrintStockData() {
   dailyLog.push(logEntry);
   updateDailyLogFile();
 
-  // Only print if we have any changed rows.
+  // Now, print the results in two columns per row.
   if (rowsToPrint.length > 0) {
-    // Print header.
     console.log(chalk.blueBright(`\n=== Stock Prices (Updated ${now.toLocaleTimeString()}) ===\n`));
-    const header =
+    // Build a combined header for two columns.
+    const singleHeader =
       chalk.bold("Company".padEnd(22)) +
       chalk.bold("Symbol".padEnd(8)) +
       chalk.bold("Price".padStart(12)) +
       chalk.bold("Curr".padStart(6)) +
       chalk.bold("% Change".padStart(12));
-    console.log(header);
-    console.log(chalk.gray("-".repeat(60)));
-    // Print each changed row.
-    rowsToPrint.forEach(r => console.log(r));
+    // Combine two headers separated by extra space.
+    const combinedHeader = singleHeader + "    " + singleHeader;
+    console.log(combinedHeader);
+    console.log(chalk.gray("-".repeat(combinedHeader.length)));
+
+    // Group rows two by two.
+    for (let i = 0; i < rowsToPrint.length; i += 2) {
+      const left = rowsToPrint[i];
+      // If there is a second row, use it; otherwise, leave it blank.
+      const right = i + 1 < rowsToPrint.length ? rowsToPrint[i + 1] : "";
+      // Join the two formatted rows with a separator (adjust space as needed).
+      console.log(left + "    " + right);
+    }
   } else {
     console.log(chalk.blueBright(`\n=== Stock Prices (Updated ${now.toLocaleTimeString()}) ===`));
     console.log(chalk.gray("No price changes since last update."));
@@ -166,7 +182,7 @@ async function fetchAndPrintStockData() {
 }
 
 /**
- * Writes the current dailyLog array to a JSON file inside the "jsonlol" folder.
+ * Writes the entire dailyLog array to a JSON file inside the jsonlol folder.
  */
 function updateDailyLogFile() {
   fs.writeFile(dailyLogPath, JSON.stringify(dailyLog, null, 2), err => {
@@ -176,13 +192,13 @@ function updateDailyLogFile() {
   });
 }
 
-// Start capturing data immediately.
+// Start by capturing data immediately.
 fetchAndPrintStockData();
 // Schedule updates every 5 seconds.
 const updateInterval = setInterval(fetchAndPrintStockData, 5000);
 
 /**
- * On termination (Ctrl+C), spawn dailySummary.ts and delete the old log afterward.
+ * On termination (Ctrl+C), spawn dailySummary.ts and delete the daily log file.
  */
 process.on("SIGINT", () => {
   console.log(chalk.red("\nTerminating... Spawning dailySummary.ts"));
@@ -199,3 +215,4 @@ process.on("SIGINT", () => {
     });
   });
 });
+
