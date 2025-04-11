@@ -4,28 +4,12 @@ import * as fs from "fs";
 import * as path from "path";
 // Import types from the centralized file.
 import { StockQuote, StockInfo, StockRecord, DailyLogEntry, StockRow } from "./types/stockTypes";
-
+import { stocks } from "./stock_list";
 // File path for the daily log in the "jsonlol" folder.
 const dailyLogPath = path.join(__dirname, "..", "jsonlol", "dailyLog.json");
 
 // In‑memory daily log (updates will be appended here).
 let dailyLog: DailyLogEntry[] = [];
-
-// List of stocks to track.
-const stocks: StockInfo[] = [
-  { company: "ATOSS SOFTWARE SE", symbol: "AOF.DE" },
-  { company: "ENVAR", symbol: "ENVAR.ST" },
-  { company: "Intel", symbol: "INTC" },
-  { company: "INVISIO", symbol: "IVSO.ST" },
-  { company: "Ovzon", symbol: "OVZON.ST" },
-  { company: "Star Vault B", symbol: "STVA-B.ST" },
-  { company: "Telenor", symbol: "TEL.OL" },
-  { company: "SKF", symbol: "SKF-B.ST" },
-  { company: "NASDAQ| Bitcoin Depot A", symbol: "BTC-USD" },
-  { company: "Nvidia", symbol: "NVDA" },
-  { company: "ASUS", symbol: "2357.TW" },
-  { company: "Hexagon AB", symbol: "HEXA.ST" }
-];
 
 // Object to store the start price for each stock (set once when the run starts).
 const startPrices: { [symbol: string]: number } = {};
